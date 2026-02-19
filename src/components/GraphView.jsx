@@ -665,8 +665,15 @@ export default function GraphView({
         node.append('circle')
             .attr('class', 'node-circle')
             .attr('r', 10)
-            .attr('fill', '#5B7FA4')
-            .attr('stroke', '#3A5570')
+            .attr('fill', d => {
+                if (d.ringColor) return d.ringColor;
+                const score = suspicionMapRef.current?.get(d.id) || 0;
+                return riskColor(score);
+            })
+            .attr('stroke', d => {
+                if (d.ringColor) return d3.color(d.ringColor).darker(0.5);
+                return '#3A5570';
+            })
             .attr('stroke-width', 1.5);
 
         // Labels (hidden by default)
@@ -1073,30 +1080,41 @@ export default function GraphView({
         if (flowFrameRef.current) cancelAnimationFrame(flowFrameRef.current);
         flowDotsRef.current = [];
 
+        // Pulse Logic: We monitor activeEdgesRef directly. 
+        // Whenever a link is in activeEdges, we spawn a pulse.
+        // But activeEdges might stay populated for ~50ms tick.
+        // We want one pulse per activation. 
+        // To do this simplistically: we just spawn for all active edges in the loop,
+        // relying on the fact that the simulation window moves.
+
+        // Actually, simpler: just spawn randomly if active, or just spawn once?
+        // Let's spawn continuously while active to represent flow.
+
         let spawnTimer = 0;
         const SPAWN_INTERVAL = 6;
-        const DOT_SPEED = 0.008;
+        const DOT_SPEED = 0.015; // Faster for better visibility
 
         function animate() {
             spawnTimer++;
             const currentActiveEdges = activeEdgesRef.current;
             const currentSuspicionMap = suspicionMapRef.current;
 
+            // Spawn new dots
             if (spawnTimer >= SPAWN_INTERVAL && currentActiveEdges.size > 0) {
                 spawnTimer = 0;
                 for (const link of links) {
                     if (!currentActiveEdges.has(link.id)) continue;
+
                     const srcId = link.source.id || link.source;
                     const srcScore = currentSuspicionMap.get(srcId) || 0;
                     const isSuspicious = srcScore > 60;
-                    if (Math.random() > 0.35) continue;
 
                     flowDotsRef.current.push({
                         link, progress: 0,
-                        speed: DOT_SPEED + Math.random() * 0.006,
-                        color: isSuspicious ? '#FF3B3B' : '#00C2FF',
-                        opacity: isSuspicious ? 0.7 : 0.5,
-                        radius: isSuspicious ? 2.5 : 2,
+                        speed: DOT_SPEED + Math.random() * 0.005,
+                        color: '#00C2FF', // Always Cyan per user request "pulse"
+                        opacity: 1,
+                        radius: 3,
                     });
                 }
             }
@@ -1113,8 +1131,10 @@ export default function GraphView({
 
                 const x = sx + (tx - sx) * dot.progress;
                 const y = sy + (ty - sy) * dot.progress;
-                const fadeIn = Math.min(dot.progress / 0.15, 1);
-                const fadeOut = Math.min((1 - dot.progress) / 0.15, 1);
+
+                // Opacity fade in/out
+                const fadeIn = Math.min(dot.progress / 0.1, 1);
+                const fadeOut = Math.min((1 - dot.progress) / 0.1, 1);
                 const alpha = dot.opacity * fadeIn * fadeOut;
 
                 flowGroup.append('circle')
@@ -1123,6 +1143,7 @@ export default function GraphView({
                     .attr('r', dot.radius)
                     .attr('fill', dot.color)
                     .attr('opacity', alpha)
+                    .attr('filter', 'drop-shadow(0 0 4px rgba(0, 194, 255, 0.8))')
                     .style('pointer-events', 'none');
 
                 alive.push(dot);

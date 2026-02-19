@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export default function TimelineStrip({ edges }) {
+export default function TimelineStrip({ edges, currentTime, hasActiveThreats }) {
     // Group transactions by timestamp and compute burst data
     const bursts = useMemo(() => {
         if (!edges || edges.length === 0) return [];
@@ -21,6 +21,10 @@ export default function TimelineStrip({ edges }) {
         return entries.map((e) => ({ ...e, height: (e.count / maxCount) * 100 }));
     }, [edges]);
 
+    const formattedTime = currentTime
+        ? new Date(currentTime).toLocaleString('en-GB')
+        : '--/--/---- --:--:--';
+
     return (
         <div className="panel" style={{
             display: 'flex',
@@ -28,6 +32,9 @@ export default function TimelineStrip({ edges }) {
             borderBottom: 'none',
             borderRight: 'none',
             overflow: 'hidden',
+            height: '100%',
+            borderColor: hasActiveThreats ? 'rgba(255, 59, 59, 0.4)' : undefined,
+            transition: 'border-color 0.3s',
         }}>
             {/* Header */}
             <div style={{
@@ -35,10 +42,28 @@ export default function TimelineStrip({ edges }) {
                 borderBottom: '1px solid var(--border-base)',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'space-between',
                 gap: '6px',
+                background: hasActiveThreats ? 'rgba(255, 59, 59, 0.1)' : 'transparent',
+                transition: 'background 0.3s',
             }}>
-                <span className="led led-green" />
-                <span className="label">TRANSACTION TIMELINE</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className={`led ${hasActiveThreats ? 'led-red' : 'led-green'}`}
+                        style={{ boxShadow: hasActiveThreats ? '0 0 8px #FF3B3B' : undefined }}
+                    />
+                    <span className="label" style={{ color: hasActiveThreats ? '#FF3B3B' : undefined }}>
+                        {hasActiveThreats ? 'THREAT ACTIVITY DETECTED' : 'TRANSACTION TIMELINE'}
+                    </span>
+                </div>
+                <div style={{
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontSize: '11px',
+                    color: hasActiveThreats ? '#FF3B3B' : '#00C2FF',
+                    fontWeight: 500,
+                    letterSpacing: '0.5px'
+                }}>
+                    {formattedTime}
+                </div>
             </div>
 
             {/* Timeline bars */}

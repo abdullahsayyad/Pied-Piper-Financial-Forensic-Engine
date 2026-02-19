@@ -7,3 +7,4 @@ Thumbs.db
 software_requirements_specification.txt
 transactions_50nodes_500tx.csv
 transactions_acc1_acc120_1000.csv
+venv

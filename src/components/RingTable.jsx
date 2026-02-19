@@ -79,7 +79,7 @@ export default function RingTable({ rings, suspicionMap, onHoverRing, onLeaveRin
                                         style={{ cursor: 'pointer' }}
                                     >
                                         <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{ring.ringId}</td>
-                                        <td>CYCLE</td>
+                                        <td>{ring.patternType || 'CYCLE'}</td>
                                         <td style={{ color: 'var(--text-primary)' }}>{ring.members.length}</td>
                                         <td style={{ color: threatColor(level), fontWeight: 600 }}>{level}</td>
                                         <td style={{ fontSize: '9px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

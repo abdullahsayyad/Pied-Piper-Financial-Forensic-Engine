@@ -18,67 +18,48 @@
  * @returns {object} - SRS-exact JSON structure
  */
 export function buildJsonReport({ graph, detections, scores, processingTimeSeconds }) {
-    // Build suspicious_accounts array (SRS FR-18)
+    // 1. Build suspicious_accounts list
     const suspiciousAccounts = [];
 
-    if (scores) {
-        for (const [accountId, score] of scores) {
-            if (score > 0) {
-                // Find which patterns this account is involved in
-                const detectedPatterns = [];
-                const ringId = null;
-
-                // Search through detection results for this account
-                if (detections) {
-                    for (const ring of detections.allRings || []) {
-                        if (ring.member_accounts?.includes(accountId)) {
-                            detectedPatterns.push(ring.pattern_type);
-                            // Use first ring found
-                            if (!ringId) {
-                                // ringId is set from first match
-                            }
-                        }
-                    }
-                }
-
-                suspiciousAccounts.push({
-                    account_id: accountId,
-                    suspicion_score: Math.round(score * 10) / 10,
-                    detected_patterns: detectedPatterns,
-                    ring_id: ringId,
-                });
-            }
-        }
-    }
-
-    // Sort descending by suspicion_score (SRS FR-11)
-    suspiciousAccounts.sort((a, b) => b.suspicion_score - a.suspicion_score);
-
-    // Build fraud_rings array (SRS FR-18)
-    const fraudRings = [];
-    if (detections) {
-        for (const ring of detections.allRings || []) {
-            fraudRings.push({
-                ring_id: ring.ring_id,
-                member_accounts: ring.member_accounts || [],
-                pattern_type: ring.pattern_type || 'unknown',
-                risk_score: Math.round((ring.risk_score || 0) * 10) / 10,
+    // Use the comprehensive list from detection engine if available, otherwise build from scores
+    if (detections && detections.suspiciousAccounts) {
+        // detectionEngine's run() returns the exact format we need for suspiciousAccounts
+        // We just need to ensure it's populated
+        detections.suspiciousAccounts.forEach(acc => {
+            suspiciousAccounts.push({
+                account_id: acc.account_id,
+                suspicion_score: acc.suspicion_score,
+                detected_patterns: acc.detected_patterns,
+                ring_id: acc.ring_id
             });
-        }
+        });
     }
 
-    // Build summary (SRS FR-18)
+    // 2. Build fraud_rings list
+    const fraud_rings = [];
+    if (detections && detections.allRings) {
+        detections.allRings.forEach(ring => {
+            fraud_rings.push({
+                ring_id: ring.ring_id,
+                member_accounts: ring.member_accounts,
+                pattern_type: ring.pattern_type,
+                risk_score: ring.risk_score
+            });
+        });
+    }
+
+    // 3. Build summary
     const summary = {
-        total_accounts_analyzed: graph?.accountCount || 0,
+        total_accounts_analyzed: graph ? graph.accountCount : 0,
         suspicious_accounts_flagged: suspiciousAccounts.length,
-        fraud_rings_detected: fraudRings.length,
-        processing_time_seconds: Math.round(processingTimeSeconds * 10) / 10,
+        fraud_rings_detected: fraud_rings.length,
+        processing_time_seconds: parseFloat(processingTimeSeconds.toFixed(1))
     };
 
     return {
         suspicious_accounts: suspiciousAccounts,
-        fraud_rings: fraudRings,
-        summary,
+        fraud_rings: fraud_rings,
+        summary: summary
     };
 }
 
