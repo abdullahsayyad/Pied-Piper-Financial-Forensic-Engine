@@ -1,24 +1,4 @@
-function threatLevel(members, suspicionMap) {
-    if (!suspicionMap || members.length === 0) return 'LOW';
-    let maxScore = 0;
-    for (const id of members) {
-        const s = suspicionMap.get(id) || 0;
-        if (s > maxScore) maxScore = s;
-    }
-    if (maxScore >= 80) return 'SEVERE';
-    if (maxScore >= 60) return 'HIGH';
-    if (maxScore >= 40) return 'ELEVATED';
-    return 'LOW';
-}
 
-function threatColor(level) {
-    switch (level) {
-        case 'SEVERE': return 'var(--threat)';
-        case 'HIGH': return 'var(--threat)';
-        case 'ELEVATED': return 'var(--elevated)';
-        default: return 'var(--success)';
-    }
-}
 
 export default function RingTable({ rings, suspicionMap, onHoverRing, onLeaveRing }) {
     return (
@@ -64,13 +44,19 @@ export default function RingTable({ rings, suspicionMap, onHoverRing, onLeaveRin
                                 <th>RING ID</th>
                                 <th>PATTERN</th>
                                 <th>NODES</th>
-                                <th>THREAT</th>
+                                <th>RISK SCORE</th>
                                 <th>MEMBERS</th>
                             </tr>
                         </thead>
                         <tbody>
                             {rings.map((ring) => {
-                                const level = threatLevel(ring.members, suspicionMap);
+                                // use passed risk score directly
+                                const score = ring.riskScore;
+                                let color = 'var(--success)';
+                                if (score >= 80) color = 'var(--threat)';
+                                else if (score >= 50) color = 'var(--elevated)';
+                                else if (score >= 20) color = 'var(--warning)';
+
                                 return (
                                     <tr
                                         key={ring.ringId}
@@ -81,7 +67,7 @@ export default function RingTable({ rings, suspicionMap, onHoverRing, onLeaveRin
                                         <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{ring.ringId}</td>
                                         <td>{ring.patternType || 'CYCLE'}</td>
                                         <td style={{ color: 'var(--text-primary)' }}>{ring.members.length}</td>
-                                        <td style={{ color: threatColor(level), fontWeight: 600 }}>{level}</td>
+                                        <td style={{ color: color, fontWeight: 600 }}>{Math.round(score)}</td>
                                         <td style={{ fontSize: '9px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {ring.members.join(', ')}
                                         </td>

@@ -1,59 +1,59 @@
-/**
- * Smurfing Detector
- * 
- * Detects:
- * 1. Fan-in: Multiple accounts -> One aggregator (10+ senders)
- * 2. Fan-out: One aggregator -> Multiple receivers (1 sender -> 10+ receivers)
- * 3. Temporal Analysis: 72-hour window.
- */
-
 export class SmurfingDetector {
     constructor(transactions) {
-        this.transactions = transactions;
-        this.fanIn = new Map(); // receiver -> [{sender, ts, amount}]
-        this.fanOut = new Map(); // sender -> [{receiver, ts, amount}]
+        this.transactions = transactions || [];
+        this.fanIn = new Map();
+        this.fanOut = new Map();
     }
 
-    run() {
-        this.transactions.forEach(txn => {
-            const u = txn.sender_id;
-            const v = txn.receiver_id;
+    parseTimestamp(ts) {
+        if (!ts) return null;
+        const d = new Date(ts);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    buildMaps() {
+        for (const txn of this.transactions) {
+            if (!txn.sender_id || !txn.receiver_id || !txn.timestamp) continue;
+
+            const sender = txn.sender_id.trim();
+            const receiver = txn.receiver_id.trim();
             const amount = parseFloat(txn.amount);
-            const ts = new Date(txn.timestamp);
+            const ts = this.parseTimestamp(txn.timestamp);
 
-            if (!this.fanIn.has(v)) this.fanIn.set(v, []);
-            this.fanIn.get(v).push({ sender: u, ts, amount });
+            if (!ts || isNaN(amount)) continue;
 
-            if (!this.fanOut.has(u)) this.fanOut.set(u, []);
-            this.fanOut.get(u).push({ receiver: v, ts, amount });
-        });
+            if (!this.fanIn.has(receiver)) this.fanIn.set(receiver, []);
+            this.fanIn.get(receiver).push({ sender, ts, amount });
 
-        const suspiciousAccounts = [];
-        const rings = [];
-        const THRESHOLD = 10;
+            if (!this.fanOut.has(sender)) this.fanOut.set(sender, []);
+            this.fanOut.get(sender).push({ receiver, ts, amount });
+        }
+    }
+
+    detectFanIn(rings, suspiciousAccounts) {
+        const MIN_THRESHOLD = 10;
+        const EXCLUSION_THRESHOLD = 20;
         const TIME_WINDOW_MS = 72 * 60 * 60 * 1000;
 
-        // Detect Fan-In
-        this.fanIn.forEach((txns, receiver) => {
+        for (const [receiver, txns] of this.fanIn.entries()) {
+
+            // 🚫 Exclude high volume nodes
+            if (txns.length >= EXCLUSION_THRESHOLD) continue;
+
+            if (txns.length < MIN_THRESHOLD) continue;
+
             txns.sort((a, b) => a.ts - b.ts);
 
-            for (let i = 0; i < txns.length; i++) {
-                let startIdx = i;
-                const windowEnd = txns[i].ts;
-                const windowStart = new Date(windowEnd.getTime() - TIME_WINDOW_MS);
-
-                // Find all txns in [windowStart, windowEnd]
-                // Since we iterate i forward, we look back or we assume [start, i] is the window.
-                // Let's use a sliding window approach properly.
-            }
-
-            // Simpler: iterate all windows
             let left = 0;
-            const uniqueSenders = new Map(); // sender -> count in window
+            const uniqueSenders = new Map();
 
             for (let right = 0; right < txns.length; right++) {
+
                 const currentTxn = txns[right];
-                uniqueSenders.set(currentTxn.sender, (uniqueSenders.get(currentTxn.sender) || 0) + 1);
+                uniqueSenders.set(
+                    currentTxn.sender,
+                    (uniqueSenders.get(currentTxn.sender) || 0) + 1
+                );
 
                 while (currentTxn.ts - txns[left].ts > TIME_WINDOW_MS) {
                     const leftTxn = txns[left];
@@ -63,41 +63,71 @@ export class SmurfingDetector {
                     left++;
                 }
 
-                if (uniqueSenders.size >= THRESHOLD) {
-                    // Found Fan-in
+                if (uniqueSenders.size >= MIN_THRESHOLD) {
+
+                    const riskScore = 80 + uniqueSenders.size; // simple score
+
                     const ringId = `SMURF_IN_${receiver}`;
+
                     rings.push({
                         ring_id: ringId,
                         member_accounts: [receiver, ...uniqueSenders.keys()],
                         pattern_type: "fan_in",
-                        risk_score: 85.0, // High risk
-                        detected_at: currentTxn.ts.toISOString().replace('T', ' ').split('.')[0]
+                        risk_score: Math.min(100, riskScore),
+                        detected_at: currentTxn.ts.toISOString(),
+                        last_transaction_time: currentTxn.ts.getTime()
                     });
 
+                    const finalScore = Math.min(100, riskScore);
+
+                    // 1. Add Receiver (Center)
                     suspiciousAccounts.push({
                         account_id: receiver,
-                        suspicion_score: 85.0,
+                        suspicion_score: finalScore,
                         detected_patterns: ["fan_in"],
                         ring_id: ringId
                     });
 
-                    // Avoid duplicates for same receiver? 
-                    // We might want just one alert per receiver
-                    return; // optimize: break outer loop for this receiver
+                    // 2. Add All Senders (Leaves)
+                    for (const senderId of uniqueSenders.keys()) {
+                        suspiciousAccounts.push({
+                            account_id: senderId,
+                            suspicion_score: finalScore,
+                            detected_patterns: ["fan_in_member"],
+                            ring_id: ringId
+                        });
+                    }
+
+                    break;
                 }
             }
-        });
+        }
+    }
 
-        // Detect Fan-Out
-        this.fanOut.forEach((txns, sender) => {
+    detectFanOut(rings, suspiciousAccounts) {
+        const MIN_THRESHOLD = 10;
+        const EXCLUSION_THRESHOLD = 20;
+        const TIME_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+        for (const [sender, txns] of this.fanOut.entries()) {
+
+            // 🚫 Exclude high volume nodes
+            if (txns.length >= EXCLUSION_THRESHOLD) continue;
+
+            if (txns.length < MIN_THRESHOLD) continue;
+
             txns.sort((a, b) => a.ts - b.ts);
 
             let left = 0;
             const uniqueReceivers = new Map();
 
             for (let right = 0; right < txns.length; right++) {
+
                 const currentTxn = txns[right];
-                uniqueReceivers.set(currentTxn.receiver, (uniqueReceivers.get(currentTxn.receiver) || 0) + 1);
+                uniqueReceivers.set(
+                    currentTxn.receiver,
+                    (uniqueReceivers.get(currentTxn.receiver) || 0) + 1
+                );
 
                 while (currentTxn.ts - txns[left].ts > TIME_WINDOW_MS) {
                     const leftTxn = txns[left];
@@ -107,26 +137,54 @@ export class SmurfingDetector {
                     left++;
                 }
 
-                if (uniqueReceivers.size >= THRESHOLD) {
+                if (uniqueReceivers.size >= MIN_THRESHOLD) {
+
+                    const riskScore = 80 + uniqueReceivers.size;
+
                     const ringId = `SMURF_OUT_${sender}`;
+
                     rings.push({
                         ring_id: ringId,
                         member_accounts: [sender, ...uniqueReceivers.keys()],
                         pattern_type: "fan_out",
-                        risk_score: 85.0,
-                        detected_at: currentTxn.ts.toISOString().replace('T', ' ').split('.')[0]
+                        risk_score: Math.min(100, riskScore),
+                        detected_at: currentTxn.ts.toISOString(),
+                        last_transaction_time: currentTxn.ts.getTime()
                     });
 
+                    const finalScore = Math.min(100, riskScore);
+
+                    // 1. Add Sender (Center)
                     suspiciousAccounts.push({
                         account_id: sender,
-                        suspicion_score: 85.0,
+                        suspicion_score: finalScore,
                         detected_patterns: ["fan_out"],
                         ring_id: ringId
                     });
-                    return;
+
+                    // 2. Add All Receivers (Leaves)
+                    for (const receiverId of uniqueReceivers.keys()) {
+                        suspiciousAccounts.push({
+                            account_id: receiverId,
+                            suspicion_score: finalScore,
+                            detected_patterns: ["fan_out_member"],
+                            ring_id: ringId
+                        });
+                    }
+
+                    break;
                 }
             }
-        });
+        }
+    }
+
+    run() {
+        const rings = [];
+        const suspiciousAccounts = [];
+
+        this.buildMaps();
+        this.detectFanIn(rings, suspiciousAccounts);
+        this.detectFanOut(rings, suspiciousAccounts);
 
         return { rings, suspiciousAccounts };
     }

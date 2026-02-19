@@ -164,7 +164,13 @@ export class CircularFundDetector {
             if (!u || !v || u === v) return;
 
             const amount = parseFloat(txn.amount) || 0;
-            const ts = new Date(txn.timestamp);
+            const rawTs = txn.timestamp;
+            let ts;
+            if (rawTs && typeof rawTs === 'string' && !rawTs.includes('T')) {
+                ts = new Date(rawTs.replace(' ', 'T') + 'Z');
+            } else {
+                ts = new Date(rawTs);
+            }
 
             const key = `${u}|${v}`;
             if (!this.edgeMeta.has(key)) {
@@ -318,7 +324,8 @@ export class CircularFundDetector {
                 member_accounts: cycle,
                 pattern_type: "cycle",
                 risk_score: score,
-                detected_at: completionTime ? completionTime.toISOString().replace('T', ' ').split('.')[0] : null
+                detected_at: completionTime ? completionTime.toISOString() : null,
+                last_transaction_time: completionTime ? completionTime.getTime() : null
             });
 
             cycle.forEach(acc => {

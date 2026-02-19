@@ -41,7 +41,13 @@ export class ShellNetworkDetector {
             const s = t.sender_id;
             const r = t.receiver_id;
             const amount = parseFloat(t.amount);
-            const ts = new Date(t.timestamp);
+            const rawTs = t.timestamp;
+            let ts;
+            if (rawTs && typeof rawTs === 'string' && !rawTs.includes('T')) {
+                ts = new Date(rawTs.replace(' ', 'T') + 'Z');
+            } else {
+                ts = new Date(rawTs);
+            }
 
             if (!s || !r || s === r) return;
 
@@ -76,7 +82,8 @@ export class ShellNetworkDetector {
     computeShellNodes() {
         const shells = new Set();
         this.txnCount.forEach((count, node) => {
-            if (count >= SHELL_TXN_MIN && count <= SHELL_TXN_MAX) {
+            // STRICT REQUIREMENT: Intermediate nodes must have 2-3 total transactions
+            if (count >= 2 && count <= 3) {
                 shells.add(node);
             }
         });
@@ -84,8 +91,11 @@ export class ShellNetworkDetector {
     }
 
     enumerateShellPaths(shellNodes) {
+        // Find potential start nodes (must have at least one connection to a shell node)
+        // Start nodes can be anything (high volume etc), they are the source of funds
         const candidateStarts = [];
         this.collapsedGraph.forEach((targets, u) => {
+            // A start node is valid if it connects to at least one shell node
             for (const v of targets) {
                 if (shellNodes.has(v)) {
                     candidateStarts.push(u);
@@ -97,12 +107,15 @@ export class ShellNetworkDetector {
         const seenSignatures = new Set();
         const results = [];
 
-        // DFS
+        // DFS to find chains: Start -> Shell -> Shell -> ... -> End
+        // Min Hops = 3 (Start -> Shell -> Shell -> End)
         const dfs = (path, visited) => {
             const current = path[path.length - 1];
             const depth = path.length - 1;
 
-            if (depth >= MIN_HOPS) {
+            // Check if valid end condition (min 3 hops)
+            // Path: [Start, S1, S2, End] -> Length 4, Hops 3
+            if (depth >= 3) {
                 const sig = path.join('|');
                 if (!seenSignatures.has(sig)) {
                     seenSignatures.add(sig);
@@ -118,32 +131,52 @@ export class ShellNetworkDetector {
             for (const neighbor of neighbors) {
                 if (visited.has(neighbor)) continue;
 
-                const nextDepth = depth + 1;
+                // CRITICAL LOGIC:
+                // If we are at depth 0 (Start Node), neighbor MUST be a Shell Node
+                // If we are at depth > 0 (Intermediate), neighbor must be Shell Node OR End Node
+                // Actually, simply: Any node picked as 'intermediate' (index 1 to length-2) MUST be shell.
+                // So, next node:
+                // If we are not stopping here (continuing DFS), next node MUST be a shell node.
+                // If we stop here (depth >= 3), current node becomes End Node (can be non-shell).
 
-                // Intermediate nodes check
-                if (nextDepth < MIN_HOPS) {
-                    if (!shellNodes.has(neighbor)) continue;
+                // Let's enforce: Next node must be Shell Node to continue deeply.
+                // If next node is NOT Shell Node, it can only be the Final Destination (and depth must be >= 2 to make it hop 3).
+
+                const isShell = shellNodes.has(neighbor);
+
+                if (isShell) {
+                    // It's a shell, we can continue through it
+                    visited.add(neighbor);
+                    path.push(neighbor);
+                    dfs(path, visited);
+                    path.pop();
+                    visited.delete(neighbor);
+                } else {
+                    // It's a non-shell node. It can ONLY be the End Node.
+                    // And we can only stop if we have crossed at least 2 shell nodes (Start -> S1 -> S2 -> End)
+                    // Current path is [Starts, ..., current]. neighbor is End.
+                    // path.length + 1 will be new length. Hops = new length - 1.
+                    // We need Hops >= 3.
+                    if (depth + 1 >= 3) {
+                        // Add as valid path and stop branch
+                        const finalPath = [...path, neighbor];
+                        const sig = finalPath.join('|');
+                        if (!seenSignatures.has(sig)) {
+                            seenSignatures.add(sig);
+                            results.push(finalPath);
+                        }
+                    }
                 }
-
-                visited.add(neighbor);
-                path.push(neighbor);
-                dfs(path, visited);
-                path.pop();
-                visited.delete(neighbor);
             }
         };
 
         const uniqueStarts = new Set(candidateStarts);
         uniqueStarts.forEach(start => {
+            // Start node itself doesn't need to be a shell node (usually legitimate source)
             dfs([start], new Set([start]));
         });
 
-        const valid = results.filter(p => {
-            const intermediates = p.slice(1, p.length - 1);
-            return intermediates.every(n => shellNodes.has(n));
-        });
-
-        return valid;
+        return results;
     }
 
     validateAndScorePath(path) {
@@ -220,7 +253,7 @@ export class ShellNetworkDetector {
     }
 
     clusterIntoRings(scoredPaths) {
-        if (!scoredPaths.length) return { rings: [], accounts: [] };
+        if (!scoredPaths.length) return { rings: [], suspiciousAccounts: [] };
 
         const n = scoredPaths.length;
         const parent = Array.from({ length: n }, (_, i) => i);
@@ -283,10 +316,18 @@ export class ShellNetworkDetector {
 
             const ringAccounts = new Set();
             let maxScore = 0;
+            let maxTs = 0;
 
             ringPaths.forEach(rp => {
                 if (rp.score > maxScore) maxScore = rp.score;
                 rp.path.forEach(node => ringAccounts.add(node));
+
+                // Find max timestamp in this path's transactions
+                if (rp.chainTxns) {
+                    rp.chainTxns.forEach(t => {
+                        if (t.timestamp.getTime() > maxTs) maxTs = t.timestamp.getTime();
+                    });
+                }
             });
 
             rings.push({
@@ -294,6 +335,8 @@ export class ShellNetworkDetector {
                 member_accounts: Array.from(ringAccounts).sort(),
                 pattern_type: "shell_network",
                 risk_score: maxScore,
+                last_transaction_time: maxTs > 0 ? maxTs : null,
+                detected_at: maxTs > 0 ? new Date(maxTs).toISOString() : null
             });
 
             ringPaths.forEach(rp => {

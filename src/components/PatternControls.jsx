@@ -19,8 +19,8 @@ export default function PatternControls({
         <div className="panel" style={{
             width: '220px',
             minWidth: '220px',
-            flex: '0 0 auto',
-            maxHeight: '60%',
+            flex: 'none',
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
             borderTop: 'none',
@@ -28,36 +28,7 @@ export default function PatternControls({
             borderBottom: 'none',
             overflowY: 'auto',
         }}>
-            {/* ── Pattern Isolation ── */}
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-base)' }}>
-                <span className="label" style={{ display: 'block', marginBottom: '10px' }}>
-                    PATTERN ISOLATION
-                </span>
-                {[
-                    { key: 'cycles', label: 'CYCLE NETWORKS' },
-                    { key: 'smurfing', label: 'SMURFING AGGREGATION' },
-                    { key: 'shells', label: 'SHELL CHAIN STRUCTURES' },
-                ].map(({ key, label }) => (
-                    <label key={key} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        padding: '5px 0', cursor: 'pointer',
-                    }}>
-                        <div
-                            className={`toggle-track ${patterns[key] ? 'active' : ''}`}
-                            onClick={() => onTogglePattern(key)}
-                        >
-                            <div className="toggle-thumb" />
-                        </div>
-                        <span style={{
-                            fontSize: '9px', fontWeight: 500, letterSpacing: '0.8px',
-                            color: patterns[key] ? 'var(--accent)' : 'var(--text-muted)',
-                            transition: 'color 0.2s',
-                        }}>
-                            {label}
-                        </span>
-                    </label>
-                ))}
-            </div>
+
 
             {/* ── Search ── */}
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-base)' }}>
@@ -99,38 +70,7 @@ export default function PatternControls({
                 </form>
             </div>
 
-            {/* ── Filters ── */}
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-base)' }}>
-                <span className="label" style={{ display: 'block', marginBottom: '10px' }}>
-                    FILTER CONTROLS
-                </span>
 
-                {/* Suspicion threshold */}
-                <div style={{ marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>RISK THRESHOLD</span>
-                        <span className="value" style={{ fontSize: '9px', color: 'var(--accent)' }}>{suspicionThreshold}</span>
-                    </div>
-                    <input
-                        type="range" min="0" max="100" value={suspicionThreshold}
-                        onChange={(e) => onSuspicionThreshold(parseInt(e.target.value))}
-                        className="cmd-slider" style={{ width: '100%' }}
-                    />
-                </div>
-
-                {/* Amount threshold */}
-                <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>MIN AMOUNT</span>
-                        <span className="value" style={{ fontSize: '9px', color: 'var(--accent)' }}>${amountThreshold}</span>
-                    </div>
-                    <input
-                        type="range" min="0" max="5000" step="100" value={amountThreshold}
-                        onChange={(e) => onAmountThreshold(parseInt(e.target.value))}
-                        className="cmd-slider" style={{ width: '100%' }}
-                    />
-                </div>
-            </div>
 
             {/* ── Simulation ── */}
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-base)' }}>
@@ -178,14 +118,7 @@ export default function PatternControls({
                     </button>
                 </div>
 
-                {/* Inject */}
-                <button
-                    className="btn-threat"
-                    onClick={onInject}
-                    style={{ width: '100%', marginTop: '6px', padding: '5px 0', fontSize: '9px' }}
-                >
-                    ⚠ INJECT THREAT
-                </button>
+
             </div>
 
             {/* Spacer for system log below */}
