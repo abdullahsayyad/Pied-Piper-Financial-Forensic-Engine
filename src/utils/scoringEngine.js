@@ -1,8 +1,8 @@
 /**
- * scoringEngine.js — Suspicion Scoring Stub (SRS §3.1.4)
+ * scoringEngine.js — Suspicion Scoring (SRS §3.1.4)
  *
- * Placeholder for suspicion score computation.
- * Returns 0 for all accounts until detection algorithms are implemented.
+ * Uses suspicion scores from the Python backend when available.
+ * Falls back to 0 for all accounts if no backend results are present.
  *
  * SRS: FR-11, FR-12
  * - suspicion_score: Float 0–100
@@ -17,18 +17,32 @@
  * @returns {Map<string, number>} - accountId → suspicion score (0–100)
  */
 export function computeSuspicionScores(graph, detections) {
-    // TODO: Implement scoring logic
-    // Factors to consider (SRS FR-12):
-    //   - Pattern involvement (which patterns the account appears in)
-    //   - Ring risk (risk score of associated rings)
-    //   - Temporal proximity (how recent/concentrated the transactions are)
-    //   - Transaction volume and velocity
-    //   - Degree centrality (from graph.degreeMap)
-
     const scores = new Map();
 
+    // Initialize all accounts to 0
     for (const accountId of graph.nodes) {
         scores.set(accountId, 0);
+    }
+
+    // Apply backend scores if available
+    const suspiciousAccounts = detections?.suspiciousAccounts || [];
+    for (const acc of suspiciousAccounts) {
+        if (acc.account_id && typeof acc.suspicion_score === 'number') {
+            scores.set(acc.account_id, acc.suspicion_score);
+        }
+    }
+
+    // Apply ring membership scores for accounts not explicitly scored
+    // (ensures all ring members get at least the ring's risk score)
+    const allRings = detections?.allRings || [];
+    for (const ring of allRings) {
+        const ringScore = ring.risk_score || 0;
+        for (const memberId of (ring.member_accounts || [])) {
+            const existing = scores.get(memberId) || 0;
+            if (ringScore > existing) {
+                scores.set(memberId, ringScore);
+            }
+        }
     }
 
     return scores;

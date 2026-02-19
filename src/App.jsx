@@ -10,7 +10,7 @@ import TimelineStrip from './components/TimelineStrip';
 import InvestigationAssistant from './components/InvestigationAssistant';
 import useSimulation from './hooks/useSimulation';
 import { transformCsvToElements, computeStats } from './utils/transformData';
-import { detectRings, buildRingMap } from './utils/detectRings';
+import { buildRingMap } from './utils/detectRings';
 import { validateCsv } from './utils/validation';
 import { buildGraph } from './utils/graphBuilder';
 import { runAllDetections } from './utils/detectionEngine';
@@ -39,16 +39,46 @@ export default function App() {
     ]);
     const [patterns, setPatterns] = useState({ cycles: false, smurfing: false, shells: false });
     const [graphData, setGraphData] = useState(null);
+    const [detectionResults, setDetectionResults] = useState(null);
     const [assistantOpen, setAssistantOpen] = useState(false);
 
     // Simulation
     const sim = useSimulation(nodes, edges);
 
-    // Rings
+    // Rings (Derived from Detection Engine results)
     const rings = useMemo(() => {
-        if (nodes.length === 0) return [];
-        return detectRings(nodes, edges);
-    }, [nodes, edges]);
+        if (!detectionResults || !detectionResults.allRings) return [];
+
+        const RING_COLORS = [
+            'rgba(255, 107, 53, 0.25)',   // orange
+            'rgba(168, 85, 247, 0.25)',   // purple
+            'rgba(236, 72, 153, 0.25)',   // pink
+            'rgba(34, 211, 238, 0.25)',   // cyan
+            'rgba(250, 204, 21, 0.25)',   // yellow
+            'rgba(52, 211, 153, 0.25)',   // green
+        ];
+
+        return detectionResults.allRings.reduce((acc, ring, i) => {
+            let color = RING_COLORS[i % RING_COLORS.length];
+
+            if (ring.pattern_type === 'cycle' || ring.pattern_type === 'cycle_length_3') {
+                const score = ring.risk_score || 0;
+                if (score < 10) return acc; // Skip low risk cycles
+
+                if (score < 30) color = 'rgba(250, 204, 21, 0.6)'; // Yellow
+                else if (score < 60) color = 'rgba(251, 146, 60, 0.6)'; // Orange
+                else color = 'rgba(239, 68, 68, 0.6)'; // Red
+            }
+
+            acc.push({
+                ringId: ring.ring_id,
+                members: ring.member_accounts,
+                color: color,
+                patternType: ring.pattern_type
+            });
+            return acc;
+        }, []);
+    }, [detectionResults]);
 
     const ringMap = useMemo(() => buildRingMap(rings), [rings]);
     const showRings = rings.length > 0;
@@ -105,7 +135,7 @@ export default function App() {
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
-            complete: (results) => {
+            complete: async (results) => {
                 const headers = results.meta.fields || [];
 
                 // ── SRS Strict Validation ──
@@ -132,11 +162,14 @@ export default function App() {
                 setGraphData(graph);
                 addLog(`Graph built: ${graph.accountCount} nodes, ${graph.edgeCount} edges`, 'success');
 
-                // ── Detection Stubs (SRS §3.1.3) ──
-                const detections = runAllDetections(graph);
+                // ── Detection via JS Engine (SRS §3.1.3) ──
+                addLog('Running detection engine...', 'info');
+                const detections = await runAllDetections(graph);
+                setDetectionResults(detections); // STORE RESULTS
+
                 addLog(`Detection engine: ${detections.allRings.length} patterns found`, 'info');
 
-                // ── Scoring Stub (SRS §3.1.4) ──
+                // ── Scoring (SRS §3.1.4) ──
                 const scores = computeSuspicionScores(graph, detections);
 
                 // ── UI Data (existing format for existing components) ──
@@ -154,29 +187,36 @@ export default function App() {
                 setProcTime(elapsed);
                 setSelectedNode(null);
 
+                // Initialize simulation suspicion map with computed scores
+                sim.initializeSuspicion(scores);
+
                 addLog(`Dataset loaded: ${validRows.length} records, ${n.length} accounts`, 'success');
                 addLog(`Processing completed in ${elapsed}ms`, 'success');
 
-                // Detect rings (existing UI-powering detection)
-                const detectedRings = detectRings(n, e);
-                if (detectedRings.length > 0) {
-                    for (const ring of detectedRings) {
-                        addLog(`Cycle detected: ${ring.ringId} (${ring.members.length} nodes)`, 'warning');
-                    }
+                if (detections.allRings.length > 0) {
+                    addLog(`Threat Detected: ${detections.allRings.length} rings/patterns identified`, 'threat');
                 } else {
-                    addLog('No cycle networks detected', 'info');
+                    addLog('No suspicious patterns detected', 'info');
                 }
             },
             error: (err) => {
                 addLog(`Parse error: ${err.message}`, 'threat');
             },
         });
-    }, [addLog]);
+    }, [addLog, sim]);
 
     // Export (SRS §3.1.6 — exact JSON schema)
-    const handleExportReport = useCallback(() => {
+    const handleExportReport = useCallback(async () => {
         const processingTimeSeconds = (procTime || 0) / 1000;
-        const detections = graphData ? runAllDetections(graphData) : { allRings: [] };
+
+        // Use stored results if available, otherwise re-run (fallback)
+        let detections = detectionResults;
+        if (!detections && graphData) {
+            detections = await runAllDetections(graphData);
+        } else if (!detections) {
+            detections = { allRings: [], suspiciousAccounts: [] };
+        }
+
         const scores = graphData ? computeSuspicionScores(graphData, detections) : new Map();
 
         const report = buildJsonReport({
@@ -186,9 +226,9 @@ export default function App() {
             processingTimeSeconds,
         });
 
-        downloadJsonReport(report);
+        downloadJsonReport(report, datasetName ? `${datasetName}_report.json` : undefined);
         addLog('Intel report exported (SRS format)', 'success');
-    }, [graphData, procTime, addLog]);
+    }, [graphData, procTime, addLog, detectionResults, datasetName]);
 
     // Node select
     const handleNodeSelect = useCallback((nodeData) => {
@@ -320,7 +360,7 @@ export default function App() {
                 borderTop: '1px solid var(--border-base)',
             }}>
                 {/* Ring Table */}
-                <div style={{ flex: 3, minWidth: 0 }}>
+                <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <RingTable
                         rings={rings}
                         suspicionMap={sim.suspicionMap}
@@ -328,8 +368,8 @@ export default function App() {
                 </div>
 
                 {/* Timeline Strip */}
-                <div style={{ flex: 2, minWidth: 0, borderLeft: '1px solid var(--border-base)' }}>
-                    <TimelineStrip edges={edges} />
+                <div style={{ flex: 2, minWidth: 0, borderLeft: '1px solid var(--border-base)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <TimelineStrip edges={edges} currentTime={sim.currentTime} hasActiveThreats={sim.hasActiveThreats} />
                 </div>
             </div>
 
