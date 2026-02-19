@@ -1,0 +1,315 @@
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════
+   RIFT 2026 — FINANCIAL THREAT MONITORING
+   Military-Grade Command Center Stylesheet
+   ══════════════════════════════════════════ */
+
+:root {
+  --bg-base: #0B0F14;
+  --bg-surface: #121A22;
+  --bg-raised: #18222D;
+  --bg-overlay: rgba(11, 15, 20, 0.95);
+
+  --border-base: #1E2A36;
+  --border-active: #2A3A4A;
+  --border-highlight: rgba(0, 194, 255, 0.25);
+
+  --accent: #00C2FF;
+  --threat: #FF3B3B;
+  --elevated: #FFC857;
+  --success: #34D399;
+  --muted-blue: #5B7FA4;
+
+  --text-primary: #D1D9E0;
+  --text-secondary: #7A8FA3;
+  --text-muted: #3E5060;
+  --text-label: #506478;
+}
+
+/* ── Reset ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Grid Background ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 194, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 194, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-base);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-active);
+}
+
+/* ── Typography ── */
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.font-body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.value {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ── Panels ── */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: 0;
+}
+
+.panel-raised {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-base);
+  border-radius: 0;
+}
+
+/* ── Status LEDs ── */
+.led {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  display: inline-block;
+}
+
+.led-green {
+  background: var(--success);
+  box-shadow: 0 0 4px var(--success);
+}
+
+.led-amber {
+  background: var(--elevated);
+  box-shadow: 0 0 4px var(--elevated);
+}
+
+.led-red {
+  background: var(--threat);
+  box-shadow: 0 0 4px var(--threat);
+}
+
+/* ── Keyframes ── */
+@keyframes radar-sweep {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes threat-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes log-entry {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Buttons ── */
+button {
+  font-family: 'IBM Plex Mono', monospace;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: rgba(0, 194, 255, 0.08);
+  border: 1px solid rgba(0, 194, 255, 0.2);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+}
+
+.btn-primary:hover {
+  background: rgba(0, 194, 255, 0.15);
+  border-color: rgba(0, 194, 255, 0.35);
+}
+
+.btn-threat {
+  background: rgba(255, 59, 59, 0.08);
+  border: 1px solid rgba(255, 59, 59, 0.2);
+  color: var(--threat);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+}
+
+.btn-threat:hover {
+  background: rgba(255, 59, 59, 0.15);
+  border-color: rgba(255, 59, 59, 0.35);
+}
+
+/* ── Toggle Switch ── */
+.toggle-track {
+  width: 28px;
+  height: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-base);
+  border-radius: 0;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toggle-track.active {
+  background: rgba(0, 194, 255, 0.12);
+  border-color: rgba(0, 194, 255, 0.3);
+}
+
+.toggle-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--text-muted);
+  border-radius: 0;
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  transition: left 0.2s, background 0.2s;
+}
+
+.toggle-track.active .toggle-thumb {
+  left: 15px;
+  background: var(--accent);
+}
+
+/* ── Range Slider ── */
+.cmd-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: var(--border-base);
+  border-radius: 0;
+  outline: none;
+  cursor: pointer;
+}
+
+.cmd-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 1px solid var(--bg-base);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.cmd-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 1px solid var(--bg-base);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* ── Table ── */
+.cmd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.cmd-table th {
+  text-align: left;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-label);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-base);
+}
+
+.cmd-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(30, 42, 54, 0.5);
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.cmd-table tr:hover td {
+  background: rgba(0, 194, 255, 0.03);
+  color: var(--text-primary);
+}
