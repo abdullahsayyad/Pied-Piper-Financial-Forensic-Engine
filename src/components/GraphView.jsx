@@ -37,6 +37,9 @@ export default function GraphView({
     const linksDataRef = useRef([]);
     const initializedRef = useRef(false);
     const zoomRef = useRef(null);
+    const flowGroupRef = useRef(null);
+    const flowFrameRef = useRef(null);
+    const flowDotsRef = useRef([]);
 
     // Convert Cytoscape format → D3 format (only on new data)
     const { d3Nodes, d3Links } = useMemo(() => {
@@ -147,6 +150,10 @@ export default function GraphView({
             });
         svg.call(zoom);
         zoomRef.current = { svg, zoom };
+
+        // Flow animation layer (above links, below nodes)
+        const flowGroup = g.append('g').attr('class', 'flow-layer');
+        flowGroupRef.current = flowGroup;
 
         // Deep copy data for D3 mutation
         const nodes = d3Nodes.map(d => ({ ...d }));
@@ -294,6 +301,7 @@ export default function GraphView({
         return () => {
             simulation.stop();
             resizeObserver.disconnect();
+            if (flowFrameRef.current) cancelAnimationFrame(flowFrameRef.current);
             initializedRef.current = false;
         };
     }, [d3Nodes, d3Links, onNodeSelect]);
@@ -366,6 +374,97 @@ export default function GraphView({
                 .style('opacity', dimmed ? 0.04 : 1);
         });
     }, [suspicionMap, activeEdges, showRings, ringMap, suspicionThreshold, amountThreshold]);
+
+    // ── Transaction Flow Animation ──
+    useEffect(() => {
+        const flowGroup = flowGroupRef.current;
+        const links = linksDataRef.current;
+        if (!flowGroup || !links || links.length === 0) return;
+
+        // Cancel previous loop
+        if (flowFrameRef.current) cancelAnimationFrame(flowFrameRef.current);
+        flowDotsRef.current = [];
+
+        let spawnTimer = 0;
+        const SPAWN_INTERVAL = 6; // frames between spawns
+        const DOT_SPEED = 0.008; // progress per frame (0→1)
+
+        function animate() {
+            spawnTimer++;
+
+            // Spawn new dots on active/suspicious edges
+            if (spawnTimer >= SPAWN_INTERVAL && activeEdges && activeEdges.size > 0) {
+                spawnTimer = 0;
+                for (const link of links) {
+                    const edgeId = link.id;
+                    if (!activeEdges.has(edgeId)) continue;
+
+                    const srcId = link.source.id || link.source;
+                    const srcScore = suspicionMap?.get(srcId) || 0;
+                    const isSuspicious = srcScore > 60;
+
+                    // Only spawn with some probability to avoid flooding
+                    if (Math.random() > 0.35) continue;
+
+                    flowDotsRef.current.push({
+                        link,
+                        progress: 0,
+                        speed: DOT_SPEED + Math.random() * 0.006,
+                        color: isSuspicious ? '#FF3B3B' : '#00C2FF',
+                        opacity: isSuspicious ? 0.7 : 0.5,
+                        radius: isSuspicious ? 2.5 : 2,
+                    });
+                }
+            }
+
+            // Update & render dots
+            const alive = [];
+            // Clear previous frame
+            flowGroup.selectAll('.flow-dot').remove();
+
+            for (const dot of flowDotsRef.current) {
+                dot.progress += dot.speed;
+                if (dot.progress >= 1) continue; // remove completed
+
+                const sx = dot.link.source.x;
+                const sy = dot.link.source.y;
+                const tx = dot.link.target.x;
+                const ty = dot.link.target.y;
+
+                if (sx == null || sy == null || tx == null || ty == null) continue;
+
+                const x = sx + (tx - sx) * dot.progress;
+                const y = sy + (ty - sy) * dot.progress;
+
+                // Fade in at start, fade out near end
+                const fadeIn = Math.min(dot.progress / 0.15, 1);
+                const fadeOut = Math.min((1 - dot.progress) / 0.15, 1);
+                const alpha = dot.opacity * fadeIn * fadeOut;
+
+                flowGroup.append('circle')
+                    .attr('class', 'flow-dot')
+                    .attr('cx', x)
+                    .attr('cy', y)
+                    .attr('r', dot.radius)
+                    .attr('fill', dot.color)
+                    .attr('opacity', alpha)
+                    .style('pointer-events', 'none');
+
+                alive.push(dot);
+            }
+
+            flowDotsRef.current = alive;
+            flowFrameRef.current = requestAnimationFrame(animate);
+        }
+
+        flowFrameRef.current = requestAnimationFrame(animate);
+
+        return () => {
+            if (flowFrameRef.current) cancelAnimationFrame(flowFrameRef.current);
+            flowGroup.selectAll('.flow-dot').remove();
+            flowDotsRef.current = [];
+        };
+    }, [activeEdges, suspicionMap]);
 
     // Highlight search
     useEffect(() => {
