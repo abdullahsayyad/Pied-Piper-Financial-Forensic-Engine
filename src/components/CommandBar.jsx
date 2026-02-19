@@ -41,6 +41,7 @@ export default function CommandBar({
     alertLevel,
     onLoadDataset,
     onExportReport,
+    onInvestigate,
     systemActive,
 }) {
     const fileRef = useRef(null);
@@ -128,6 +129,25 @@ export default function CommandBar({
                     style={{ opacity: datasetName ? 1 : 0.3 }}
                 >
                     ▼ EXPORT INTEL REPORT
+                </button>
+                <button
+                    onClick={onInvestigate}
+                    style={{
+                        background: 'rgba(0, 194, 255, 0.06)',
+                        border: '1px solid rgba(0, 194, 255, 0.15)',
+                        color: '#00C2FF',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: '9px',
+                        fontWeight: 600,
+                        letterSpacing: '1.5px',
+                        padding: '6px 14px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                    }}
+                >
+                    🧠 INVESTIGATE
                 </button>
             </div>
         </div>
