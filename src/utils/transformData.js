@@ -16,19 +16,21 @@ export function transformCsvToElements(rows) {
 
         // Track sender
         if (!nodeMap.has(sender)) {
-            nodeMap.set(sender, { totalSent: 0, totalReceived: 0, txCount: 0 });
+            nodeMap.set(sender, { totalSent: 0, totalReceived: 0, txCount: 0, outCount: 0, inCount: 0 });
         }
         const sData = nodeMap.get(sender);
         sData.totalSent += amount;
         sData.txCount += 1;
+        sData.outCount += 1;
 
         // Track receiver
         if (!nodeMap.has(receiver)) {
-            nodeMap.set(receiver, { totalSent: 0, totalReceived: 0, txCount: 0 });
+            nodeMap.set(receiver, { totalSent: 0, totalReceived: 0, txCount: 0, outCount: 0, inCount: 0 });
         }
         const rData = nodeMap.get(receiver);
         rData.totalReceived += amount;
         rData.txCount += 1;
+        rData.inCount += 1;
 
         // Edge
         edges.push({
@@ -56,6 +58,8 @@ export function transformCsvToElements(rows) {
                 totalSent: stats.totalSent,
                 totalReceived: stats.totalReceived,
                 txCount: stats.txCount,
+                inCount: stats.inCount,
+                outCount: stats.outCount,
             },
         });
     }

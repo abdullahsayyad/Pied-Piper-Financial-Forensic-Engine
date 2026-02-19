@@ -1,5 +1,6 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import * as d3 from 'd3';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from './ui/hover-card';
 
 /* ── Risk-coded node colors (matte, no gradients) ── */
 function riskColor(score) {
@@ -40,6 +41,9 @@ export default function GraphView({
     const flowGroupRef = useRef(null);
     const flowFrameRef = useRef(null);
     const flowDotsRef = useRef([]);
+    const activeEdgesRef = useRef(new Set());
+    const suspicionMapRef = useRef(new Map());
+    const [hoverInfo, setHoverInfo] = useState(null);
 
     // Convert Cytoscape format → D3 format (only on new data)
     const { d3Nodes, d3Links } = useMemo(() => {
@@ -66,6 +70,8 @@ export default function GraphView({
                     totalSent: el.data.totalSent || 0,
                     totalReceived: el.data.totalReceived || 0,
                     txCount: el.data.txCount || 0,
+                    inCount: el.data.inCount || 0,
+                    outCount: el.data.outCount || 0,
                     ringId: el.data.ringId || null,
                     ringColor: el.data.ringColor || null,
                 });
@@ -230,8 +236,11 @@ export default function GraphView({
             .style('stroke-width', '2px');
 
         // Drag behavior
+        let isDragging = false;
         const drag = d3.drag()
             .on('start', (event, d) => {
+                isDragging = true;
+                setHoverInfo(null);
                 if (!event.active) simulation.alphaTarget(0.1).restart();
                 d.fx = d.x;
                 d.fy = d.y;
@@ -241,12 +250,27 @@ export default function GraphView({
                 d.fy = event.y;
             })
             .on('end', (event, d) => {
+                isDragging = false;
                 if (!event.active) simulation.alphaTarget(0);
                 d.fx = null;
                 d.fy = null;
             });
 
         node.call(drag);
+
+        // Hover tracking for HoverCard
+        node.on('mouseenter', function (event, d) {
+            if (isDragging) return;
+            const svgNode = svg.node();
+            const transform = d3.zoomTransform(svgNode);
+            const x = transform.applyX(d.x);
+            const y = transform.applyY(d.y);
+            setHoverInfo({ x, y, data: d });
+        });
+
+        node.on('mouseleave', function () {
+            setHoverInfo(null);
+        });
 
         // Click handler
         node.on('click', (event, d) => {
@@ -375,35 +399,47 @@ export default function GraphView({
         });
     }, [suspicionMap, activeEdges, showRings, ringMap, suspicionThreshold, amountThreshold]);
 
-    // ── Transaction Flow Animation ──
+    // ── Keep flow refs in sync (no teardown) ──
+    useEffect(() => {
+        activeEdgesRef.current = activeEdges || new Set();
+    }, [activeEdges]);
+
+    useEffect(() => {
+        suspicionMapRef.current = suspicionMap || new Map();
+    }, [suspicionMap]);
+
+    // ── Transaction Flow Animation (stable loop) ──
     useEffect(() => {
         const flowGroup = flowGroupRef.current;
         const links = linksDataRef.current;
         if (!flowGroup || !links || links.length === 0) return;
 
-        // Cancel previous loop
+        // Cancel any previous loop
         if (flowFrameRef.current) cancelAnimationFrame(flowFrameRef.current);
         flowDotsRef.current = [];
 
         let spawnTimer = 0;
-        const SPAWN_INTERVAL = 6; // frames between spawns
-        const DOT_SPEED = 0.008; // progress per frame (0→1)
+        const SPAWN_INTERVAL = 6;
+        const DOT_SPEED = 0.008;
 
         function animate() {
             spawnTimer++;
 
+            const currentActiveEdges = activeEdgesRef.current;
+            const currentSuspicionMap = suspicionMapRef.current;
+
             // Spawn new dots on active/suspicious edges
-            if (spawnTimer >= SPAWN_INTERVAL && activeEdges && activeEdges.size > 0) {
+            if (spawnTimer >= SPAWN_INTERVAL && currentActiveEdges.size > 0) {
                 spawnTimer = 0;
                 for (const link of links) {
                     const edgeId = link.id;
-                    if (!activeEdges.has(edgeId)) continue;
+                    if (!currentActiveEdges.has(edgeId)) continue;
 
                     const srcId = link.source.id || link.source;
-                    const srcScore = suspicionMap?.get(srcId) || 0;
+                    const srcScore = currentSuspicionMap.get(srcId) || 0;
                     const isSuspicious = srcScore > 60;
 
-                    // Only spawn with some probability to avoid flooding
+                    // Throttle spawns to avoid flooding
                     if (Math.random() > 0.35) continue;
 
                     flowDotsRef.current.push({
@@ -419,12 +455,11 @@ export default function GraphView({
 
             // Update & render dots
             const alive = [];
-            // Clear previous frame
             flowGroup.selectAll('.flow-dot').remove();
 
             for (const dot of flowDotsRef.current) {
                 dot.progress += dot.speed;
-                if (dot.progress >= 1) continue; // remove completed
+                if (dot.progress >= 1) continue;
 
                 const sx = dot.link.source.x;
                 const sy = dot.link.source.y;
@@ -436,7 +471,6 @@ export default function GraphView({
                 const x = sx + (tx - sx) * dot.progress;
                 const y = sy + (ty - sy) * dot.progress;
 
-                // Fade in at start, fade out near end
                 const fadeIn = Math.min(dot.progress / 0.15, 1);
                 const fadeOut = Math.min((1 - dot.progress) / 0.15, 1);
                 const alpha = dot.opacity * fadeIn * fadeOut;
@@ -464,14 +498,26 @@ export default function GraphView({
             flowGroup.selectAll('.flow-dot').remove();
             flowDotsRef.current = [];
         };
-    }, [activeEdges, suspicionMap]);
+    }, [d3Nodes]); // Only restart when graph data changes, not on every tick
 
     // Highlight search
     useEffect(() => {
         const svg = svgRef.current;
-        if (!svg || !highlightNodeId) return;
+        if (!svg) return;
 
         const g = svg.select('g');
+
+        // Reset all nodes to their default stroke
+        g.selectAll('.graph-node').each(function (d) {
+            const score = suspicionMapRef.current?.get(d.id) || 0;
+            d3.select(this).select('.node-circle')
+                .attr('stroke', score > 70 ? 'rgba(255, 59, 59, 0.5)' : '#3A5570')
+                .attr('stroke-width', 1.5);
+        });
+
+        if (!highlightNodeId) return;
+
+        // Apply highlight to the target node
         g.selectAll('.graph-node').each(function (d) {
             if (d.id === highlightNodeId) {
                 const el = d3.select(this);
@@ -528,6 +574,9 @@ export default function GraphView({
         );
     }
 
+    // Format currency values
+    const fmt = (v) => v != null ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0';
+
     return (
         <div
             ref={containerRef}
@@ -545,6 +594,51 @@ export default function GraphView({
                 pointerEvents: 'none',
                 zIndex: 1,
             }} />
+
+            {/* Node HoverCard overlay */}
+            {hoverInfo && (
+                <HoverCard open defaultOpenDelay={0}>
+                    <HoverCardTrigger asChild>
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: hoverInfo.x - 2,
+                                top: hoverInfo.y - 2,
+                                width: 4,
+                                height: 4,
+                                pointerEvents: 'none',
+                            }}
+                        />
+                    </HoverCardTrigger>
+                    <HoverCardContent side="top" sideOffset={12}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ color: '#00C2FF', fontWeight: 600, fontSize: '11px', marginBottom: '4px', letterSpacing: '1px' }}>
+                                {hoverInfo.data.label}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 12px', fontSize: '10px' }}>
+                                <span style={{ color: '#7A8FA3' }}>TRANSACTIONS</span>
+                                <span>{hoverInfo.data.txCount || 0}</span>
+                                <span style={{ color: '#7A8FA3' }}>INCOMING</span>
+                                <span>{hoverInfo.data.inCount || 0}</span>
+                                <span style={{ color: '#7A8FA3' }}>OUTGOING</span>
+                                <span>{hoverInfo.data.outCount || 0}</span>
+                                <span style={{ color: '#7A8FA3' }}>TOTAL IN</span>
+                                <span style={{ color: '#4CAF50' }}>{fmt(hoverInfo.data.totalReceived)}</span>
+                                <span style={{ color: '#7A8FA3' }}>TOTAL OUT</span>
+                                <span style={{ color: '#FF6B6B' }}>{fmt(hoverInfo.data.totalSent)}</span>
+                                {(suspicionMapRef.current?.get(hoverInfo.data.id) > 0) && (<>
+                                    <span style={{ color: '#7A8FA3' }}>SUSPICION</span>
+                                    <span style={{ color: '#FFC857' }}>{Math.round(suspicionMapRef.current.get(hoverInfo.data.id))}</span>
+                                </>)}
+                                {hoverInfo.data.ringId && (<>
+                                    <span style={{ color: '#7A8FA3' }}>RING</span>
+                                    <span style={{ color: '#FFC857' }}>{hoverInfo.data.ringId}</span>
+                                </>)}
+                            </div>
+                        </div>
+                    </HoverCardContent>
+                </HoverCard>
+            )}
         </div>
     );
 }
