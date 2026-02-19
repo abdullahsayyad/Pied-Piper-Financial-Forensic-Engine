@@ -5,6 +5,8 @@
  * Returns sanitized rows or detailed error list.
  */
 
+import { parseTimestamp } from './timeUtils';
+
 const REQUIRED_COLUMNS = [
     'transaction_id',
     'sender_id',
@@ -13,7 +15,8 @@ const REQUIRED_COLUMNS = [
     'timestamp',
 ];
 
-const TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/;
+// Accept YYYY-MM-DD, YYYY-MM-DD HH:MM:SS, DD-MM-YYYY HH:MM, DD-MM-YYYY HH:MM:SS
+const TIMESTAMP_REGEX = /^\d{2,4}-\d{2}-\d{2,4}(\s+\d{2}:\d{2}(:\d{2})?)?$/;
 
 /**
  * Validate CSV headers against SRS-required schema.
@@ -60,16 +63,12 @@ export function validateRow(row, index) {
         errors.push(`Row ${index + 1}: invalid amount "${amountRaw}"`);
     }
 
-    // timestamp: must match YYYY-MM-DD HH:MM:SS format
+    // timestamp: must be valid YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
     const timestamp = row.timestamp?.toString().trim();
     if (!timestamp) {
         errors.push(`Row ${index + 1}: missing timestamp`);
-    } else if (!TIMESTAMP_REGEX.test(timestamp)) {
-        // Allow flexible parsing but warn
-        const parsed = new Date(timestamp);
-        if (isNaN(parsed.getTime())) {
-            errors.push(`Row ${index + 1}: invalid timestamp "${timestamp}"`);
-        }
+    } else if (!TIMESTAMP_REGEX.test(timestamp) || !parseTimestamp(timestamp)) {
+        errors.push(`Row ${index + 1}: invalid timestamp "${timestamp}"`);
     }
 
     if (errors.length > 0) {

@@ -7,24 +7,53 @@
 
 /**
  * Parse a timestamp string into a Date object.
- * Handles "YYYY-MM-DD HH:MM:SS" format (SRS required format).
+ * Handles multiple formats:
+ *   - "YYYY-MM-DD"
+ *   - "YYYY-MM-DD HH:MM:SS"
+ *   - "DD-MM-YYYY HH:MM"
+ *   - "DD-MM-YYYY HH:MM:SS"
+ * Does NOT use new Date(string) — strict manual parsing only.
+ *
  * @param {string} str - Timestamp string
  * @returns {Date|null} - Parsed Date or null if invalid
  */
 export function parseTimestamp(str) {
     if (!str || typeof str !== 'string') return null;
 
-    const trimmed = str.trim();
+    const [datePart, timePart] = str.trim().split(' ');
 
-    // Try direct parse (handles ISO and common formats)
-    const date = new Date(trimmed.replace(' ', 'T'));
-    if (!isNaN(date.getTime())) return date;
+    if (!datePart) return null;
 
-    // Fallback: try native parse
-    const fallback = new Date(trimmed);
-    if (!isNaN(fallback.getTime())) return fallback;
+    const datePieces = datePart.split('-').map(Number);
+    if (datePieces.length !== 3 || datePieces.some(isNaN)) return null;
 
-    return null;
+    let year, month, day;
+
+    // Auto-detect: if first piece has 4 digits → YYYY-MM-DD, else DD-MM-YYYY
+    if (datePart.split('-')[0].length === 4) {
+        [year, month, day] = datePieces;
+    } else {
+        [day, month, year] = datePieces;
+    }
+
+    if (!year || !month || !day) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    let hours = 0, minutes = 0, seconds = 0;
+
+    if (timePart) {
+        const tp = timePart.split(':').map(Number);
+        hours = tp[0] ?? 0;
+        minutes = tp[1] ?? 0;
+        seconds = tp[2] ?? 0;
+
+        if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) return null;
+        if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+    }
+
+    const date = new Date(year, month - 1, day, hours, minutes, seconds);
+
+    return isNaN(date.getTime()) ? null : date;
 }
 
 /**

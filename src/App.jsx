@@ -7,6 +7,7 @@ import GraphView from './components/GraphView';
 import IntelligencePanel from './components/IntelligencePanel';
 import RingTable from './components/RingTable';
 import TimelineStrip from './components/TimelineStrip';
+import InvestigationAssistant from './components/InvestigationAssistant';
 import useSimulation from './hooks/useSimulation';
 import { transformCsvToElements, computeStats } from './utils/transformData';
 import { detectRings, buildRingMap } from './utils/detectRings';
@@ -38,6 +39,7 @@ export default function App() {
     ]);
     const [patterns, setPatterns] = useState({ cycles: false, smurfing: false, shells: false });
     const [graphData, setGraphData] = useState(null);
+    const [assistantOpen, setAssistantOpen] = useState(false);
 
     // Simulation
     const sim = useSimulation(nodes, edges);
@@ -50,6 +52,16 @@ export default function App() {
 
     const ringMap = useMemo(() => buildRingMap(rings), [rings]);
     const showRings = rings.length > 0;
+
+    // Investigation context (memoized for stability)
+    const investigationContext = useMemo(() => ({
+        accountCount: stats?.uniqueAccounts || 0,
+        transactionCount: stats?.transactionCount || 0,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        ringCount: rings.length,
+        datasetName: datasetName,
+    }), [stats, nodes.length, edges.length, rings.length, datasetName]);
 
     // Enriched elements
     const enrichedElements = useMemo(() => {
@@ -213,8 +225,9 @@ export default function App() {
     // Search
     const handleSearch = useCallback((id) => {
         if (!id) return;
-        setSearchNodeId(id.toUpperCase());
-        addLog(`Search target: ${id.toUpperCase()}`, 'info');
+        const trimmed = id.trim();
+        setSearchNodeId(trimmed);
+        addLog(`Search target: ${trimmed}`, 'info');
         setTimeout(() => setSearchNodeId(null), 100);
     }, [addLog]);
 
@@ -246,6 +259,7 @@ export default function App() {
                 alertLevel={alertLevel}
                 onLoadDataset={handleLoadDataset}
                 onExportReport={handleExportReport}
+                onInvestigate={() => setAssistantOpen(true)}
             />
 
             {/* ═══ MIDDLE: 3-column ═══ */}
@@ -318,6 +332,13 @@ export default function App() {
                     <TimelineStrip edges={edges} />
                 </div>
             </div>
+
+            {/* ═══ INVESTIGATION ASSISTANT ═══ */}
+            <InvestigationAssistant
+                isOpen={assistantOpen}
+                onClose={() => setAssistantOpen(false)}
+                context={investigationContext}
+            />
         </div>
     );
 }
