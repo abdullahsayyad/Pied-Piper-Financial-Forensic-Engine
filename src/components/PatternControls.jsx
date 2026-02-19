@@ -19,13 +19,14 @@ export default function PatternControls({
         <div className="panel" style={{
             width: '220px',
             minWidth: '220px',
-            height: '100%',
+            flex: '0 0 auto',
+            maxHeight: '60%',
             display: 'flex',
             flexDirection: 'column',
             borderTop: 'none',
             borderLeft: 'none',
             borderBottom: 'none',
-            overflow: 'hidden',
+            overflowY: 'auto',
         }}>
             {/* ── Pattern Isolation ── */}
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-base)' }}>

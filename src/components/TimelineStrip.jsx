@@ -49,6 +49,8 @@ export default function TimelineStrip({ edges }) {
                 gap: '2px',
                 padding: '8px 14px',
                 minHeight: 0,
+                overflowX: 'auto',
+                paddingBottom: '4px', // Space for scrollbar
             }}>
                 {bursts.length === 0 ? (
                     <span style={{ fontSize: '9px', color: 'var(--text-muted)', alignSelf: 'center', width: '100%', textAlign: 'center' }}>
@@ -60,7 +62,8 @@ export default function TimelineStrip({ edges }) {
                             key={i}
                             title={`${b.timestamp}\n${b.count} tx — $${b.volume.toLocaleString()}`}
                             style={{
-                                flex: 1,
+                                flex: '0 0 auto',
+                                minWidth: '16px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
