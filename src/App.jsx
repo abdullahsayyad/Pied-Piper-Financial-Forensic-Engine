@@ -10,6 +10,11 @@ import TimelineStrip from './components/TimelineStrip';
 import useSimulation from './hooks/useSimulation';
 import { transformCsvToElements, computeStats } from './utils/transformData';
 import { detectRings, buildRingMap } from './utils/detectRings';
+import { validateCsv } from './utils/validation';
+import { buildGraph } from './utils/graphBuilder';
+import { runAllDetections } from './utils/detectionEngine';
+import { computeSuspicionScores } from './utils/scoringEngine';
+import { buildJsonReport, downloadJsonReport } from './utils/jsonExporter';
 
 function getTimestamp() {
     const d = new Date();
@@ -32,6 +37,7 @@ export default function App() {
         { time: getTimestamp(), message: 'System initialized. Awaiting dataset.', type: 'info' },
     ]);
     const [patterns, setPatterns] = useState({ cycles: false, smurfing: false, shells: false });
+    const [graphData, setGraphData] = useState(null);
 
     // Simulation
     const sim = useSimulation(nodes, edges);
@@ -88,20 +94,46 @@ export default function App() {
             header: true,
             skipEmptyLines: true,
             complete: (results) => {
-                const elapsed = Math.round(performance.now() - start);
-                const required = ['transaction_id', 'sender_id', 'receiver_id', 'amount', 'timestamp'];
                 const headers = results.meta.fields || [];
-                const missing = required.filter((h) => !headers.includes(h));
 
-                if (missing.length > 0) {
-                    addLog(`ERROR: Missing columns: ${missing.join(', ')}`, 'threat');
+                // ── SRS Strict Validation ──
+                const validation = validateCsv(headers, results.data);
+
+                if (!validation.valid && validation.validRows.length === 0) {
+                    for (const err of validation.errors) {
+                        addLog(`VALIDATION: ${err}`, 'threat');
+                    }
                     return;
                 }
 
-                const { nodes: n, edges: e, elements: els } = transformCsvToElements(results.data);
-                const networkStats = computeStats(results.data);
+                if (validation.invalidCount > 0) {
+                    addLog(`WARNING: ${validation.invalidCount} invalid rows skipped`, 'warning');
+                    for (const err of validation.errors.slice(0, 3)) {
+                        addLog(`  → ${err}`, 'warning');
+                    }
+                }
 
-                setRawRows(results.data);
+                const validRows = validation.validRows;
+
+                // ── Graph Construction (SRS §3.1.2) ──
+                const graph = buildGraph(validRows);
+                setGraphData(graph);
+                addLog(`Graph built: ${graph.accountCount} nodes, ${graph.edgeCount} edges`, 'success');
+
+                // ── Detection Stubs (SRS §3.1.3) ──
+                const detections = runAllDetections(graph);
+                addLog(`Detection engine: ${detections.allRings.length} patterns found`, 'info');
+
+                // ── Scoring Stub (SRS §3.1.4) ──
+                const scores = computeSuspicionScores(graph, detections);
+
+                // ── UI Data (existing format for existing components) ──
+                const { nodes: n, edges: e, elements: els } = transformCsvToElements(validRows);
+                const networkStats = computeStats(validRows);
+
+                const elapsed = Math.round(performance.now() - start);
+
+                setRawRows(validRows);
                 setNodes(n);
                 setEdges(e);
                 setElements(els);
@@ -110,10 +142,10 @@ export default function App() {
                 setProcTime(elapsed);
                 setSelectedNode(null);
 
-                addLog(`Dataset loaded: ${results.data.length} records, ${n.length} accounts`, 'success');
+                addLog(`Dataset loaded: ${validRows.length} records, ${n.length} accounts`, 'success');
                 addLog(`Processing completed in ${elapsed}ms`, 'success');
 
-                // Detect rings
+                // Detect rings (existing UI-powering detection)
                 const detectedRings = detectRings(n, e);
                 if (detectedRings.length > 0) {
                     for (const ring of detectedRings) {
@@ -129,29 +161,22 @@ export default function App() {
         });
     }, [addLog]);
 
-    // Export
+    // Export (SRS §3.1.6 — exact JSON schema)
     const handleExportReport = useCallback(() => {
-        const report = {
-            timestamp: new Date().toISOString(),
-            dataset: datasetName,
-            stats,
-            rings: rings.map((r) => ({
-                ringId: r.ringId,
-                members: r.members,
-                nodeCount: r.members.length,
-            })),
-            suspicionScores: Object.fromEntries(sim.suspicionMap || []),
-        };
+        const processingTimeSeconds = (procTime || 0) / 1000;
+        const detections = graphData ? runAllDetections(graphData) : { allRings: [] };
+        const scores = graphData ? computeSuspicionScores(graphData, detections) : new Map();
 
-        const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `intel_report_${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        addLog('Intel report exported', 'success');
-    }, [datasetName, stats, rings, sim.suspicionMap, addLog]);
+        const report = buildJsonReport({
+            graph: graphData,
+            detections,
+            scores,
+            processingTimeSeconds,
+        });
+
+        downloadJsonReport(report);
+        addLog('Intel report exported (SRS format)', 'success');
+    }, [graphData, procTime, addLog]);
 
     // Node select
     const handleNodeSelect = useCallback((nodeData) => {
