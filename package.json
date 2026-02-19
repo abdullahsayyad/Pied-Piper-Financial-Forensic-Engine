@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@radix-ui/react-hover-card": "^1.1.15",
     "cytoscape": "^3.33.1",
     "d3": "^7.9.0",
     "papaparse": "^5.5.3",
