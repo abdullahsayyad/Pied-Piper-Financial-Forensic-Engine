@@ -376,17 +376,20 @@ export default function GraphView({
 
         const nodeItems = [];
         const linkItems = [];
+        const validNodeIds = new Set();
 
+        // 1. First pass: Filter nodes based on suspicion threshold
         for (const el of elements) {
-            if (el.data.source) {
-                linkItems.push({
-                    id: el.data.id,
-                    source: el.data.source,
-                    target: el.data.target,
-                    amount: el.data.amount || 0,
-                    timestamp: el.data.timestamp || '',
-                });
-            } else {
+            if (!el.data.source) { // It's a node
+                const score = suspicionMap?.get(el.data.id) || 0;
+                // Keep if score >= threshold OR if threshold is 0 (show all)
+                // Also keep if it's a ring member with high enough score?
+                // User said "remove ... less than that". Strict filter.
+                if (suspicionThreshold > 0 && score < suspicionThreshold) {
+                    continue;
+                }
+
+                validNodeIds.add(el.data.id);
                 nodeItems.push({
                     id: el.data.id,
                     label: el.data.label || el.data.id,
@@ -401,8 +404,23 @@ export default function GraphView({
             }
         }
 
+        // 2. Second pass: Filter edges (must connect two valid nodes)
+        for (const el of elements) {
+            if (el.data.source) { // It's an edge
+                if (validNodeIds.has(el.data.source) && validNodeIds.has(el.data.target)) {
+                    linkItems.push({
+                        id: el.data.id,
+                        source: el.data.source,
+                        target: el.data.target,
+                        amount: el.data.amount || 0,
+                        timestamp: el.data.timestamp || '',
+                    });
+                }
+            }
+        }
+
         return { d3Nodes: nodeItems, d3Links: linkItems };
-    }, [elements]);
+    }, [elements, suspicionMap, suspicionThreshold]);
 
     // ══ Initialize D3 force simulation + SVG ══
     useEffect(() => {
@@ -471,7 +489,8 @@ export default function GraphView({
         const alphaDecayVal = N <= 50 ? 0.035 : 0.045;
 
         // Edge filtering for large graphs
-        const visibleEdgeIds = N > 100 ? getVisibleEdgeIds(links, 5) : null;
+        // Edge filtering for large graphs (Relaxed for mid-size datasets like money-mulling)
+        const visibleEdgeIds = N > 600 ? getVisibleEdgeIds(links, 20) : null;
         const visibleLinks = visibleEdgeIds ? links.filter(l => visibleEdgeIds.has(l.id)) : links;
 
         // ── Zoom ──
@@ -604,7 +623,7 @@ export default function GraphView({
             .join('path')
             .attr('class', 'graph-link graph-link-primary')
             .attr('fill', 'none')
-            .attr('stroke', 'rgba(90, 127, 164, 0.07)')
+            .attr('stroke', 'rgba(90, 127, 164, 0.4)')
             .attr('stroke-width', d => 0.4 + (Math.min(d.amount, 5000) / 5000) * 1.2)
             .attr('marker-end', 'url(#arrow-normal)');
 

@@ -8,6 +8,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  */
 export default function useSimulation(nodes, edges) {
     const [timeStep, setTimeStep] = useState(0); // Used to force re-renders
+    const [stepCount, setStepCount] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [speed, setSpeed] = useState(1);
     const [suspicionMap, setSuspicionMap] = useState(() => new Map());
@@ -48,8 +49,10 @@ export default function useSimulation(nodes, edges) {
         let hasTime = false;
 
         for (const e of edges) {
-            if (e.data.timestamp) {
-                const ts = new Date(e.data.timestamp).getTime();
+            // Check for both data.timestamp and data.ts if inconsistent
+            const val = e.data.timestamp || e.data.ts;
+            if (val) {
+                const ts = new Date(val).getTime();
                 if (!isNaN(ts)) {
                     if (ts < minTs) minTs = ts;
                     if (ts > maxTs) maxTs = ts;
@@ -65,10 +68,11 @@ export default function useSimulation(nodes, edges) {
             currentTimeRef.current = minTs;
         } else {
             // Fallback if no timestamps
-            setStartTime(0);
-            setEndTime(100);
-            setCurrentTime(0);
-            currentTimeRef.current = 0;
+            const now = Date.now();
+            setStartTime(now);
+            setEndTime(now + 100000);
+            setCurrentTime(now);
+            currentTimeRef.current = now;
         }
 
     }, [nodes, edges]);
@@ -145,6 +149,7 @@ export default function useSimulation(nodes, edges) {
 
             setActiveEdges(newActive);
             setHasActiveThreats(threatFound);
+            setStepCount(prev => prev + 1);
 
             // 3. Propagate Suspicion (Optional mixed mode)
             // We can keep the existing suspicion propagation logic but trigger it
@@ -176,13 +181,14 @@ export default function useSimulation(nodes, edges) {
         setIsPlaying(false);
         currentTimeRef.current = startTime;
         setCurrentTime(startTime);
+        setStepCount(0);
         setActiveEdges(new Set());
         setSuspicionMap(new Map(nodesRef.current.map(n => [n.data.id, 0])));
     }, [startTime]);
 
     return {
         currentTime, // Exported for UI if needed
-        timeStep: 0, // Deprecated but kept for interface
+        timeStep: stepCount,
         isPlaying,
         speed,
         suspicionMap,
@@ -191,6 +197,9 @@ export default function useSimulation(nodes, edges) {
         pause,
         setSpeed,
         injectSuspicious,
+        initializeSuspicion: (scores) => {
+            setSuspicionMap(new Map(Object.entries(scores instanceof Map ? Object.fromEntries(scores) : scores)));
+        },
         reset,
         hasActiveThreats,
     };

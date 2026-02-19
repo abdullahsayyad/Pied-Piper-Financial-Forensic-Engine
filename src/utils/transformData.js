@@ -7,10 +7,32 @@ export function transformCsvToElements(rows) {
     const edges = [];
 
     for (const row of rows) {
-        const sender = row.sender_id?.trim();
-        const receiver = row.receiver_id?.trim();
-        const amount = parseFloat(row.amount) || 0;
-        const txId = row.transaction_id?.trim() || `tx_${Math.random().toString(36).slice(2, 8)}`;
+        // Robust property access (case-insensitive, trimmed)
+        const getProp = (key) => {
+            return row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] ||
+                row[Object.keys(row).find(k => k.toLowerCase().trim() === key.toLowerCase())];
+        };
+
+        const sender = (getProp('sender_id') || getProp('Sender_ID'))?.trim();
+        const receiver = (getProp('receiver_id') || getProp('Receiver_ID'))?.trim();
+        const amountStr = getProp('amount') || getProp('Amount');
+        const amount = parseFloat(amountStr) || 0;
+        const txId = (getProp('transaction_id') || getProp('Transaction_ID'))?.trim() || `tx_${Math.random().toString(36).slice(2, 8)}`;
+        const rawTs = (getProp('timestamp') || getProp('Timestamp') || getProp('Time'))?.trim();
+        let ts = '';
+        if (rawTs) {
+            // Check if it's already ISO
+            if (rawTs.includes('T') && rawTs.endsWith('Z')) {
+                ts = rawTs;
+            } else {
+                const d = new Date(rawTs);
+                if (!isNaN(d.getTime())) {
+                    ts = d.toISOString();
+                } else {
+                    ts = rawTs; // Fallback
+                }
+            }
+        }
 
         if (!sender || !receiver) continue;
 
@@ -39,7 +61,7 @@ export function transformCsvToElements(rows) {
                 source: sender,
                 target: receiver,
                 amount,
-                timestamp: row.timestamp?.trim() || '',
+                timestamp: ts,
                 active: false,
             },
         });

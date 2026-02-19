@@ -6,12 +6,13 @@ import SystemLog from './components/SystemLog';
 import GraphView from './components/GraphView';
 import IntelligencePanel from './components/IntelligencePanel';
 import RingTable from './components/RingTable';
-import TimelineStrip from './components/TimelineStrip';
+
 import InvestigationAssistant from './components/InvestigationAssistant';
 import useSimulation from './hooks/useSimulation';
 import { transformCsvToElements, computeStats } from './utils/transformData';
 import { buildRingMap } from './utils/detectRings';
 import { validateCsv } from './utils/validation';
+import { normalizeData } from './utils/dataNormalizer';
 import { buildGraph } from './utils/graphBuilder';
 import { runAllDetections } from './utils/detectionEngine';
 import { computeSuspicionScores } from './utils/scoringEngine';
@@ -70,11 +71,33 @@ export default function App() {
                 else color = 'rgba(239, 68, 68, 0.6)'; // Red
             }
 
+            // Timestamp is now pre-calculated by detectors
+            let detectedAt = ring.last_transaction_time || ring.detected_at;
+
+            // Fallback if missing (should not happen with new logic)
+            if (!detectedAt) {
+                const ringEdges = edges.filter(e =>
+                    ring.member_accounts.includes(e.data.source) &&
+                    ring.member_accounts.includes(e.data.target)
+                );
+                if (ringEdges.length > 0) {
+                    ringEdges.sort((a, b) => new Date(b.data.timestamp) - new Date(a.data.timestamp));
+                    detectedAt = ringEdges[0].data.timestamp;
+                }
+            }
+
+            // Ensure detectedAt is a string ISO for consistency with other parts if it was a number
+            if (typeof detectedAt === 'number') {
+                detectedAt = new Date(detectedAt).toISOString();
+            }
+
             acc.push({
                 ringId: ring.ring_id,
                 members: ring.member_accounts,
                 color: color,
-                patternType: ring.pattern_type
+                patternType: ring.pattern_type,
+                riskScore: ring.risk_score || 0,
+                timestamp: detectedAt || 'unknown'
             });
             return acc;
         }, []);
@@ -135,11 +158,13 @@ export default function App() {
         Papa.parse(file, {
             header: true,
             skipEmptyLines: true,
+            comments: '#', // Ignore comment lines
             complete: async (results) => {
-                const headers = results.meta.fields || [];
+                const rawHeaders = results.meta.fields || [];
+                const { headers, rows } = normalizeData(results.data, rawHeaders);
 
                 // ── SRS Strict Validation ──
-                const validation = validateCsv(headers, results.data);
+                const validation = validateCsv(headers, rows);
 
                 if (!validation.valid && validation.validRows.length === 0) {
                     for (const err of validation.errors) {
@@ -359,17 +384,12 @@ export default function App() {
                 minHeight: '180px',
                 borderTop: '1px solid var(--border-base)',
             }}>
-                {/* Ring Table */}
-                <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Ring Table - Full Width */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <RingTable
                         rings={rings}
                         suspicionMap={sim.suspicionMap}
                     />
-                </div>
-
-                {/* Timeline Strip */}
-                <div style={{ flex: 2, minWidth: 0, borderLeft: '1px solid var(--border-base)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <TimelineStrip edges={edges} currentTime={sim.currentTime} hasActiveThreats={sim.hasActiveThreats} />
                 </div>
             </div>
 
