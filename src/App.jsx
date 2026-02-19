@@ -225,8 +225,9 @@ export default function App() {
     // Search
     const handleSearch = useCallback((id) => {
         if (!id) return;
-        setSearchNodeId(id.toUpperCase());
-        addLog(`Search target: ${id.toUpperCase()}`, 'info');
+        const trimmed = id.trim();
+        setSearchNodeId(trimmed);
+        addLog(`Search target: ${trimmed}`, 'info');
         setTimeout(() => setSearchNodeId(null), 100);
     }, [addLog]);
 
