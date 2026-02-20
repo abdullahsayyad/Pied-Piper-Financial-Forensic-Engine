@@ -356,7 +356,7 @@ Nishit Dixit Jain
 
 Burhanuddin Gulamali
 
-Abdullah Sayyed
+Abdullah Sayyad
 
 Atharva Mangesh Khedekar
 
