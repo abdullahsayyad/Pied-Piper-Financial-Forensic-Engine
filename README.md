@@ -46,6 +46,8 @@ Acts as an optional API gateway layer for request handling, authentication, and 
 
 ## System Architecture
 
+![Alt text](public/diagram-export-2-20-2026-6_53_42-AM.png)
+
 The system processes transaction datasets uploaded in CSV format and converts them into a directed financial graph. Each transaction is represented as:
 
 ```
